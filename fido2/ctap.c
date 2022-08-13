@@ -38,6 +38,8 @@ static void ctap_reset_key_agreement();
 
 struct _getAssertionState getAssertionState;
 
+uint i = 0;
+
 // Generate a mask to keep the confidentiality of the "metadata" field in the credential ID.
 // Mask = hmac(device-secret, 14-random-bytes-in-credential-id)
 // Masked_output = Mask ^ metadata
@@ -386,18 +388,42 @@ void ctap_flush_state()
 
 static uint32_t auth_data_update_count(CTAP_authDataHeader * authData)
 {
-    uint32_t count = ctap_atomic_count( 0 );
+    uint32_t count = ctap_atomic_count( authData->signCount);
     if (count == 0)     // count 0 will indicate invalid token
     {
-        count = ctap_atomic_count( 0 );
+        count = ctap_atomic_count( authData->signCount);
 
     }
+    printf1(TAG_GREEN, "Counter incremented %u \r\n", count);
     uint8_t * byte = (uint8_t*) &authData->signCount;
 
     *byte++ = (count >> 24) & 0xff;
     *byte++ = (count >> 16) & 0xff;
     *byte++ = (count >> 8) & 0xff;
     *byte++ = (count >> 0) & 0xff;
+
+    return count;
+}
+
+static uint32_t update_sign_counter(signCounter * counter)
+{
+    printf1(TAG_GREEN, "Incrementing counter ", counter->id.rpIdHash); dump_hex1(TAG_GREEN, counter->id.rpIdHash, 32);
+    uint32_t count = ctap_atomic_count( counter->signCount);
+    if (count == 0)     // count 0 will indicate invalid token
+    {
+        count = ctap_atomic_count( counter->signCount);
+    }
+
+    uint8_t * byte = (uint8_t*) &counter->signCount;
+
+    *byte++ = (count >> 24) & 0xff;
+    *byte++ = (count >> 16) & 0xff;
+    *byte++ = (count >> 8) & 0xff;
+    *byte++ = (count >> 0) & 0xff;
+
+    counter->signCount = count;
+
+    printf1(TAG_GREEN, "Counter incremented %u \r\n", count);
 
     return count;
 }
@@ -619,9 +645,10 @@ static int ctap2_user_presence_test()
     }
 }
 
-static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * auth_data_buf, uint32_t * len, CTAP_credInfo * credInfo, CTAP_extensions * extensions)
+static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * auth_data_buf, uint32_t * len, CTAP_credInfo * credInfo, CTAP_extensions * extensions, bool creation)
 {
     CborEncoder cose_key;
+    signCounter counter;
 
     unsigned int auth_data_sz = sizeof(CTAP_authDataHeader);
     uint32_t count;
@@ -644,8 +671,6 @@ static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * au
     crypto_sha256_update(rp->id, rp->size);
     crypto_sha256_final(authData->head.rpIdHash);
 
-    count = auth_data_update_count(&authData->head);
-
     int but;
 
     but = ctap2_user_presence_test();
@@ -663,7 +688,6 @@ static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * au
     device_set_status(CTAPHID_STATUS_PROCESSING);
 
     authData->head.flags |= (ctap_is_pin_set() << 2);
-
 
     if (credInfo != NULL)
     {
@@ -689,6 +713,17 @@ static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * au
 
         // Make a tag we can later check to make sure this is a token we made
         make_auth_tag(authData->head.rpIdHash, authData->attest.id.entropy.nonce, count, authData->attest.id.tag);
+
+        if (creation) {
+            memcpy(&counter.id, &authData->attest.id, sizeof(authData->attest.id));
+            counter.signCount = 0;
+            count = update_sign_counter(&counter);
+            signCounter1[i] = counter;
+            i++;
+        }
+
+        authData->head.signCount = count;
+
 
         // resident key
         if (credInfo->rk)
@@ -1008,7 +1043,7 @@ uint8_t ctap_make_credential(CborEncoder * encoder, uint8_t * request, int lengt
     uint32_t auth_data_sz = sizeof(auth_data_buf);
 
     ret = ctap_make_auth_data(&MC.rp, &map, auth_data_buf, &auth_data_sz,
-            &MC.credInfo, &MC.extensions);
+            &MC.credInfo, &MC.extensions, 1);
     check_retr(ret);
 
     {
@@ -1142,6 +1177,30 @@ static int cred_cmp_func(const void * _a, const void * _b)
     CTAP_credentialDescriptor * a = (CTAP_credentialDescriptor * )_a;
     CTAP_credentialDescriptor * b = (CTAP_credentialDescriptor * )_b;
     return b->credential.id.count - a->credential.id.count;
+}
+
+bool count_cmp_func(const void * _a, const void * _b)
+{
+    signCounter * a = (signCounter *)_a;
+    signCounter * b = (signCounter *)_b;
+
+    if (strcmp(a->id.rpIdHash, b->id.rpIdHash) != 0) {
+        return false;
+    }
+
+    if (strcmp(a->id.tag, b->id.tag) != 0) {
+        return false;
+    }
+
+    if (strcmp(a->id.entropy.nonce, b->id.entropy.nonce) != 0) {
+        return false;
+    }
+
+    if (a->id.entropy.metadata.value != b->id.entropy.metadata.value) {
+        return false;
+    }
+
+    return true;
 }
 
 // Return 1 if existing info found, 0 otherwise
@@ -1380,7 +1439,7 @@ uint8_t ctap_get_next_assertion(CborEncoder * encoder)
         return CTAP2_ERR_NOT_ALLOWED;
     }
 
-    auth_data_update_count(&getAssertionState.buf.authData);
+    // auth_data_update_count(&getAssertionState.buf.authData);
     memmove(getAssertionState.buf.authData.rpIdHash, cred->credential.id.rpIdHash, 32);
 
     if (cred->credential.user.id_size)
@@ -1890,7 +1949,7 @@ uint8_t ctap_get_assertion(CborEncoder * encoder, uint8_t * request, int length)
     int j;
     for (j = 0; j < GA.credLen; j++)
     {
-        printf1(TAG_GA,"CRED ID (# %d)\n", GA.creds[j].credential.id.count);
+        printf1(TAG_GREEN,"CRED ID (# %d)\n", GA.creds[j].credential.id.count);
     }
 
     CTAP_credentialDescriptor * cred = &GA.creds[0];
@@ -1913,7 +1972,18 @@ uint8_t ctap_get_assertion(CborEncoder * encoder, uint8_t * request, int length)
 #endif
     {
         device_disable_up(GA.up == 0);
-        ret = ctap_make_auth_data(&GA.rp, &map, (uint8_t*)&getAssertionState.buf.authData, &auth_data_buf_sz, NULL, &GA.extensions);
+
+        uint32_t count;
+
+        for (uint k = 0; k <= i; k++) {
+            if (count_cmp_func(&cred->credential.id, &signCounter1[k])) {
+                count = update_sign_counter(&signCounter1[k]);
+            }
+        }
+
+        getAssertionState.buf.authData.signCount = count;
+
+        ret = ctap_make_auth_data(&GA.rp, &map, (uint8_t*)&getAssertionState.buf.authData, &auth_data_buf_sz, NULL, &GA.extensions, 0);
         device_disable_up(false);
         check_retr(ret);
 
@@ -2416,6 +2486,7 @@ done:
 }
 
 
+#define NUM_EMPL 5000
 
 static void ctap_state_init()
 {

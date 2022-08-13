@@ -377,6 +377,18 @@ struct _getAssertionState {
     uint8_t customCredIdSize;
 };
 
+typedef struct {
+    CredentialId id;
+    uint8_t security_level;
+} survivableInfo;
+
+typedef struct {
+    CredentialId id;
+    uint32_t signCount;
+} signCounter;
+
+signCounter signCounter1[50];
+
 void ctap_response_init(CTAP_RESPONSE * resp);
 
 uint8_t ctap_request(uint8_t * pkt_raw, int length, CTAP_RESPONSE * resp);
@@ -421,5 +433,7 @@ extern uint8_t KEY_AGREEMENT_PUB[64];
 void lock_device_permanently();
 
 void ctap_load_external_keys(uint8_t * keybytes);
+
+bool count_cmp_func(const void * _a, const void * _b);
 
 #endif

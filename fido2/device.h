@@ -115,7 +115,7 @@ int ctap_generate_rng(uint8_t * dst, size_t num);
  * 
  * *Optional*, if not implemented, the counter will not be persistant.
 */
-uint32_t ctap_atomic_count(uint32_t amount);
+uint32_t ctap_atomic_count(uint32_t counter);
 
 /** Delete all resident keys.
  * 
