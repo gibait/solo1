@@ -856,6 +856,19 @@ uint8_t ctap_parse_make_credential(CTAP_makeCredential * MC, CborEncoder * encod
                 MC->pinAuthPresent = 1;
                 break;
             }
+            case MC_securityLevel:
+                printf1(TAG_MC,"Custom SecurityLevel\n");
+                if (cbor_value_get_type(&map) == CborIntegerType)
+                {
+                    ret = cbor_value_get_int_checked(&map, &MC->securityLevel);
+                    check_ret(ret);
+                    printf1(TAG_MC," == %d\n",MC->securityLevel);
+                }
+                else
+                {
+                    return CTAP2_ERR_INVALID_CBOR_TYPE;
+                }
+                break;
             case MC_pinProtocol:
                 printf1(TAG_MC,"CTAP_pinProtocol\n");
                 if (cbor_value_get_type(&map) == CborIntegerType)
@@ -868,7 +881,6 @@ uint8_t ctap_parse_make_credential(CTAP_makeCredential * MC, CborEncoder * encod
                 {
                     return CTAP2_ERR_INVALID_CBOR_TYPE;
                 }
-
                 break;
 
             default:
@@ -1277,6 +1289,19 @@ uint8_t ctap_parse_get_assertion(CTAP_getAssertion * GA, uint8_t * request, int 
 
                 break;
             }
+            case GA_securityLevel:
+                printf1(TAG_GA,"Custom SecurityLevel\n");
+                if (cbor_value_get_type(&map) == CborIntegerType)
+                {
+                    ret = cbor_value_get_int_checked(&map, &GA->securityLevel);
+                    check_ret(ret);
+                    printf1(TAG_GA," == %d\n",GA->securityLevel);
+                }
+                else
+                {
+                    return CTAP2_ERR_INVALID_CBOR_TYPE;
+                }
+                break;
             case GA_pinProtocol:
                 printf1(TAG_GA,"CTAP_pinProtocol\n");
                 if (cbor_value_get_type(&map) == CborIntegerType)
