@@ -38,7 +38,7 @@ static void ctap_reset_key_agreement();
 
 struct _getAssertionState getAssertionState;
 
-uint i = 0;
+uint globalCounter = 0;
 
 // Generate a mask to keep the confidentiality of the "metadata" field in the credential ID.
 // Mask = hmac(device-secret, 14-random-bytes-in-credential-id)
@@ -405,15 +405,13 @@ static uint32_t auth_data_update_count(CTAP_authDataHeader * authData)
     return count;
 }
 
-static uint32_t update_sign_counter(signCounter * counter)
+static uint32_t update_sign_counter(signCounter * counter, int k)
 {
-    printf1(TAG_GREEN, "Incrementing counter ", counter->id.rpIdHash); dump_hex1(TAG_GREEN, counter->id.rpIdHash, 32);
-    uint32_t count = ctap_atomic_count( counter->signCount);
+    uint32_t count = ctap_atomic_count( counter->signCount[k]);
     if (count == 0)     // count 0 will indicate invalid token
     {
-        count = ctap_atomic_count( counter->signCount);
+        count = ctap_atomic_count( counter->signCount[k]);
     }
-
     uint8_t * byte = (uint8_t*) &counter->signCount;
 
     *byte++ = (count >> 24) & 0xff;
@@ -421,9 +419,9 @@ static uint32_t update_sign_counter(signCounter * counter)
     *byte++ = (count >> 8) & 0xff;
     *byte++ = (count >> 0) & 0xff;
 
-    counter->signCount = count;
+    counter->signCount[k] = count;
 
-    printf1(TAG_GREEN, "Counter incremented %u \r\n", count);
+    printf1(TAG_CTAP, "sign counter incremented %u \r\n", count);
 
     return count;
 }
@@ -645,10 +643,9 @@ static int ctap2_user_presence_test()
     }
 }
 
-static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * auth_data_buf, uint32_t * len, CTAP_credInfo * credInfo, CTAP_extensions * extensions, bool creation)
+static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * auth_data_buf, uint32_t * len, CTAP_credInfo * credInfo, CTAP_extensions * extensions)
 {
     CborEncoder cose_key;
-    signCounter counter;
 
     unsigned int auth_data_sz = sizeof(CTAP_authDataHeader);
     uint32_t count;
@@ -713,16 +710,6 @@ static int ctap_make_auth_data(struct rpId * rp, CborEncoder * map, uint8_t * au
 
         // Make a tag we can later check to make sure this is a token we made
         make_auth_tag(authData->head.rpIdHash, authData->attest.id.entropy.nonce, count, authData->attest.id.tag);
-
-        if (creation) {
-            memcpy(&counter.id, &authData->attest.id, sizeof(authData->attest.id));
-            counter.signCount = 0;
-            count = update_sign_counter(&counter);
-            signCounter1[i] = counter;
-            i++;
-        }
-
-        authData->head.signCount = count;
 
 
         // resident key
@@ -956,7 +943,9 @@ int ctap_authenticate_credential(struct rpId * rp, CTAP_credentialDescriptor * d
 uint8_t ctap_make_credential(CborEncoder * encoder, uint8_t * request, int length)
 {
     CTAP_makeCredential MC;
+    signCounter counter;
     int ret;
+    uint32_t count;
     unsigned int i;
     uint8_t auth_data_buf[310];
     CTAP_credentialDescriptor * excl_cred = (CTAP_credentialDescriptor *) auth_data_buf;
@@ -1043,8 +1032,15 @@ uint8_t ctap_make_credential(CborEncoder * encoder, uint8_t * request, int lengt
     uint32_t auth_data_sz = sizeof(auth_data_buf);
 
     ret = ctap_make_auth_data(&MC.rp, &map, auth_data_buf, &auth_data_sz,
-            &MC.credInfo, &MC.extensions, 1);
+            &MC.credInfo, &MC.extensions);
     check_retr(ret);
+
+    memcpy(&counter.id, &((CTAP_authData *)auth_data_buf)->attest.id, sizeof(CredentialId));
+    signCounter1[globalCounter] = counter;
+    count = update_sign_counter(&signCounter1[globalCounter], MC.securityLevel);
+    globalCounter++;
+
+    ((CTAP_authData *)auth_data_buf)->head.signCount = count;
 
     {
         unsigned int ext_encoder_buf_size = sizeof(auth_data_buf) - auth_data_sz;
@@ -1958,6 +1954,17 @@ uint8_t ctap_get_assertion(CborEncoder * encoder, uint8_t * request, int length)
 
     uint32_t auth_data_buf_sz = sizeof(CTAP_authDataHeader);
 
+    uint32_t count = 0;
+
+    for (uint l = 0; l <= globalCounter; l++) {
+        if (count_cmp_func(&cred->credential.id, &signCounter1[l])) {
+            count = update_sign_counter(&signCounter1[l], GA.securityLevel);
+        }
+    }
+
+    getAssertionState.buf.authData.signCount = count;
+
+
 #ifdef ENABLE_U2F_EXTENSIONS
     if ( is_extension_request((uint8_t*)&GA.creds[0].credential.id, sizeof(CredentialId)) )
     {
@@ -1973,17 +1980,7 @@ uint8_t ctap_get_assertion(CborEncoder * encoder, uint8_t * request, int length)
     {
         device_disable_up(GA.up == 0);
 
-        uint32_t count;
-
-        for (uint k = 0; k <= i; k++) {
-            if (count_cmp_func(&cred->credential.id, &signCounter1[k])) {
-                count = update_sign_counter(&signCounter1[k]);
-            }
-        }
-
-        getAssertionState.buf.authData.signCount = count;
-
-        ret = ctap_make_auth_data(&GA.rp, &map, (uint8_t*)&getAssertionState.buf.authData, &auth_data_buf_sz, NULL, &GA.extensions, 0);
+        ret = ctap_make_auth_data(&GA.rp, &map, (uint8_t*)&getAssertionState.buf.authData, &auth_data_buf_sz, NULL, &GA.extensions);
         device_disable_up(false);
         check_retr(ret);
 

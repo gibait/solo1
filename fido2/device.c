@@ -119,7 +119,6 @@ __attribute__((weak)) int ctap_user_verification(uint8_t arg)
 
 __attribute__((weak)) uint32_t ctap_atomic_count(uint32_t counter)
 {
-    // static uint32_t counter1 = 25;
     counter += 1;
     return counter;
 }
