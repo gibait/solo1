@@ -1,6 +1,6 @@
 # Configuration
 ## Cloning repository
-`git clone --recurse-submodules https://github.com/solokeys/solo`
+`git clone --recurse-submodules https://github.com/gibait/solo1`
 
 ## Installing the toolchain
 1. Install ARM compiler
@@ -12,12 +12,6 @@
 
 
 # Deployment cycle
-## Change the code 
-Change RRGGBB values in *solo/targets/stm32l432/src/app.h*
-```
-#define LED_INIT_VALUE          0xFF0800
-#define LED_WINK_VALUE          0x000010
-```
 ## Compile code
 ```
 cd solo/targets/stm32l432/
@@ -32,3 +26,28 @@ solo1 program aux enter-bootloader
 
 ## Deploy code to device
 `solo1 program bootloader targets/stm32l432/solo.hex`
+
+# Developing Solo (No Hardware Needed)
+
+## Prereqs
+
+1. Need libsodium.  On debian, install:
+
+```
+sudo apt install libsodium-dev
+```
+
+## Building
+
+Clone Solo and build it
+
+```bash
+git clone --recurse-submodules https://github.com/solokeys/solo
+cd solo
+make all
+```
+
+## Running
+```bash
+./main
+```
