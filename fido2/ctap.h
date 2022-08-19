@@ -30,6 +30,7 @@
 #define MC_options                0x07
 #define MC_pinAuth                0x08
 #define MC_pinProtocol            0x09
+#define MC_securityLevel          0x0A
 
 #define GA_rpId                   0x01
 #define GA_clientDataHash         0x02
@@ -38,6 +39,7 @@
 #define GA_options                0x05
 #define GA_pinAuth                0x06
 #define GA_pinProtocol            0x07
+#define GA_securityLevel          0x08
 
 #define CM_cmd                    0x01
     #define CM_cmdMetadata        0x01
@@ -172,6 +174,7 @@ typedef struct {
         }__attribute__((packed)) metadata;
     }__attribute__((packed)) entropy;
     uint8_t rpIdHash[32];
+    // TODO debug count attribute
     uint32_t count;
 }__attribute__((packed)) CredentialId;
 
@@ -286,6 +289,7 @@ typedef struct
     // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#using-pinToken-in-authenticatorMakeCredential
     uint8_t pinAuthEmpty;
     int pinProtocol;
+    int securityLevel;
     CTAP_extensions extensions;
 
 } CTAP_makeCredential;
@@ -314,6 +318,7 @@ typedef struct
     // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#using-pinToken-in-authenticatorGetAssertion
     uint8_t pinAuthEmpty;
     int pinProtocol;
+    int securityLevel;
 
     CTAP_credentialDescriptor * creds;
     uint8_t allowListPresent;
@@ -377,14 +382,11 @@ struct _getAssertionState {
     uint8_t customCredIdSize;
 };
 
-typedef struct {
-    CredentialId id;
-    uint8_t security_level;
-} survivableInfo;
 
 typedef struct {
     CredentialId id;
-    uint32_t signCount;
+    // TODO change signCount into array
+    uint32_t signCount[];
 } signCounter;
 
 signCounter signCounter1[50];
