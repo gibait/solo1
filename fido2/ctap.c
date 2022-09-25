@@ -405,23 +405,17 @@ static uint32_t auth_data_update_count(CTAP_authDataHeader * authData)
     return count;
 }
 
-static uint32_t update_sign_counter(signCounter * counter, int k)
+static uint32_t update_sign_counter(signCounter * counter, int security_level)
 {
-    uint32_t count = ctap_atomic_count( counter->signCount[k]);
+    uint32_t count = ctap_atomic_count( counter->signCount[security_level]);
     if (count == 0)     // count 0 will indicate invalid token
     {
-        count = ctap_atomic_count( counter->signCount[k]);
+        count = ctap_atomic_count( counter->signCount[security_level]);
     }
-    uint8_t * byte = (uint8_t*) &counter->signCount;
 
-    *byte++ = (count >> 24) & 0xff;
-    *byte++ = (count >> 16) & 0xff;
-    *byte++ = (count >> 8) & 0xff;
-    *byte++ = (count >> 0) & 0xff;
+    counter->signCount[security_level] = count;
 
-    counter->signCount[k] = count;
-
-    printf1(TAG_CTAP, "sign counter incremented %u \r\n", count);
+    printf1(TAG_CTAP, "level %d sign counter incremented: %u \r\n", security_level, count);
 
     return count;
 }
@@ -1037,6 +1031,9 @@ uint8_t ctap_make_credential(CborEncoder * encoder, uint8_t * request, int lengt
 
     memcpy(&counter.id, &((CTAP_authData *)auth_data_buf)->attest.id, sizeof(CredentialId));
     signCounter1[globalCounter] = counter;
+    for (int j = 0; j <= MC.securityLevel; j++) {
+        counter.signCount[j] = 0;
+    }
     count = update_sign_counter(&signCounter1[globalCounter], MC.securityLevel);
     globalCounter++;
 
