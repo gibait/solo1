@@ -385,11 +385,10 @@ struct _getAssertionState {
 
 typedef struct {
     CredentialId id;
-    // TODO change signCount into array
     uint32_t signCount[];
 } signCounter;
 
-signCounter signCounter1[50];
+signCounter signCounter1[];
 
 void ctap_response_init(CTAP_RESPONSE * resp);
 
